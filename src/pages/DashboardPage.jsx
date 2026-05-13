@@ -381,10 +381,10 @@ function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete }
   const [form, setForm] = useState({
     name: '',
     address: '',
-    phone: '',
+    phoneNumber: '',
     latitude: '',
     longitude: '',
-    avgServiceTime: 15,
+    avgServiceTime: 30,
   });
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
