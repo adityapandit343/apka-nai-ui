@@ -1,0 +1,28 @@
+﻿
+> cutbook-frontend@0.0.0 dev
+> vite --host 127.0.0.1
+
+npm.cmd : [31mfailed to load config from D:\meratool\cutbook-frontend\vite.config.js[39m
+    + CategoryInfo          : NotSpecified: ([31mfailed to ....config.js[39m:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[31merror when starting dev server:
+Error: EPERM: operation not permitted, open 
+'D:\meratool\cutbook-frontend\node_modules\.vite-temp\vite.config.js.timestamp-1778407783560-5155303e82279.mjs'
+    at async open (node:internal/fs/promises:637:25)
+    at async Object.writeFile (node:internal/fs/promises:1239:14)
+    at async loadConfigFromBundledFile 
+(file:///D:/meratool/cutbook-frontend/node_modules/vite/dist/node/chunks/node.js:34782:3)
+    at async bundleAndLoadConfigFile 
+(file:///D:/meratool/cutbook-frontend/node_modules/vite/dist/node/chunks/node.js:34645:17)
+    at async loadConfigFromFile 
+(file:///D:/meratool/cutbook-frontend/node_modules/vite/dist/node/chunks/node.js:34612:42)
+    at async resolveConfig (file:///D:/meratool/cutbook-frontend/node_modules/vite/dist/node/chunks/node.js:34237:22)
+    at async _createServer (file:///D:/meratool/cutbook-frontend/node_modules/vite/dist/node/chunks/node.js:26026:65)
+    at async CAC.<anonymous> (file:///D:/meratool/cutbook-frontend/node_modules/vite/dist/node/cli.js:709:18) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'open',
+  path: 
+'D:\\meratool\\cutbook-frontend\\node_modules\\.vite-temp\\vite.config.js.timestamp-1778407783560-5155303e82279.mjs'
+}[39m
