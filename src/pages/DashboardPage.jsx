@@ -432,7 +432,7 @@ function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete }
     await onCreate({
       name: form.name.trim(),
       address: form.address.trim(),
-      phoneNumberNumber: form.phoneNumber.trim(),
+      phoneNumber: form.phoneNumber.trim(),
       latitude: form.latitude === '' ? null : Number(form.latitude),
       longitude: form.longitude === '' ? null : Number(form.longitude),
       avgServiceTime: Number(form.avgServiceTime) || 15,
