@@ -432,12 +432,12 @@ function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete }
     await onCreate({
       name: form.name.trim(),
       address: form.address.trim(),
-      phone: form.phone.trim(),
+      phoneNumberNumber: form.phoneNumber.trim(),
       latitude: form.latitude === '' ? null : Number(form.latitude),
       longitude: form.longitude === '' ? null : Number(form.longitude),
       avgServiceTime: Number(form.avgServiceTime) || 15,
     });
-    setForm({ name: '', address: '', phone: '', latitude: '', longitude: '', avgServiceTime: 15 });
+    setForm({ name: '', address: '', phoneNumber: '', latitude: '', longitude: '', avgServiceTime: 15 });
     setCreating(false);
     setSaving(false);
   };
@@ -496,9 +496,9 @@ function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete }
             style={inputStyle}
           />
           <input
-            placeholder="Phone (optional)"
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            placeholder="phoneNumber (optional)"
+            value={form.phoneNumber}
+            onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
             style={inputStyle}
           />
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
