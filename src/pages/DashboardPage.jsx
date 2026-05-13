@@ -89,80 +89,8 @@ function Toast({ message, onClose }) {
   );
 }
 
-// ─── QR / Share link card ─────────────────────────────────────────────────────
-function ShareCard({ shop }) {
-  const url = `${window.location.origin}/customer/${shop.id}`;
-  const [copied, setCopied] = useState(false);
-
-  const copy = () => {
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div
-      style={{
-        background: 'rgba(212,175,55,0.06)',
-        border: '1px solid rgba(212,175,55,0.2)',
-        borderRadius: 14,
-        padding: '18px 20px',
-        marginBottom: 24,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 16,
-        flexWrap: 'wrap',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(245,240,232,0.4)', marginBottom: 4 }}>
-          Customer Join Link
-        </div>
-        <div
-          style={{
-            fontSize: 13,
-            color: '#D4AF37',
-            fontFamily: 'monospace',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {url}
-        </div>
-      </div>
-      <button
-        onClick={copy}
-        style={{
-          background: copied ? 'rgba(74,222,128,0.15)' : 'rgba(212,175,55,0.15)',
-          border: `1px solid ${copied ? 'rgba(74,222,128,0.3)' : 'rgba(212,175,55,0.3)'}`,
-          color: copied ? '#4ADE80' : '#D4AF37',
-          padding: '8px 18px',
-          borderRadius: 8,
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: 'pointer',
-          fontFamily: "'DM Sans', sans-serif",
-          whiteSpace: 'nowrap',
-          transition: 'all 0.2s',
-          flexShrink: 0,
-        }}
-      >
-        {copied ? '✓ Copied!' : 'Copy Link'}
-      </button>
-    </div>
-  );
-}
-
 // ─── Serving card ─────────────────────────────────────────────────────────────
-function ServingCard({ customer, onDone, shopId }) {
-  const [loading, setLoading] = useState(false);
-  const handle = async () => {
-    setLoading(true);
-    await onDone(customer.id);
-    setLoading(false);
-  };
-
+function ServingCard({ tokenNumber, onDone, loading }) {
   return (
     <div
       style={{
@@ -196,7 +124,7 @@ function ServingCard({ customer, onDone, shopId }) {
             flexShrink: 0,
           }}
         >
-          {customer.tokenNumber}
+          {tokenNumber}
         </div>
         <div>
           <div
@@ -211,12 +139,12 @@ function ServingCard({ customer, onDone, shopId }) {
             ● Serving Now
           </div>
           <div style={{ fontSize: 20, fontFamily: "'Playfair Display', serif", fontWeight: 700, color: '#F5F0E8' }}>
-            {customer.customerName}
+            Token #{tokenNumber}
           </div>
         </div>
       </div>
       <button
-        onClick={handle}
+        onClick={onDone}
         disabled={loading}
         style={{
           background: 'rgba(74,222,128,0.15)',
@@ -329,12 +257,7 @@ function QueueRow({ customer, position, avgServiceTime, onNoShow }) {
 }
 
 // ─── Stats bar ────────────────────────────────────────────────────────────────
-function StatsBar({ queue }) {
-  const serving = queue.find((c) => c.status === 'Serving');
-  const waiting = queue.filter((c) => c.status === 'Waiting').length;
-  const done = queue.filter((c) => c.status === 'Done').length;
-  const noshow = queue.filter((c) => c.status === 'NoShow').length;
-
+function StatsBar({ waitingCount, servingToken }) {
   const stat = (label, value, accent = false) => (
     <div
       style={{
@@ -365,18 +288,14 @@ function StatsBar({ queue }) {
 
   return (
     <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-      {stat('Serving', serving ? `#${serving.tokenNumber}` : '—', true)}
-      {stat('Waiting', waiting)}
-      {stat('Done Today', done)}
-      {stat('No-shows', noshow)}
+      {stat('Serving', servingToken ? `#${servingToken}` : '—', true)}
+      {stat('Waiting', waitingCount)}
     </div>
   );
 }
 
 // ─── Shop selector / creator ──────────────────────────────────────────────────
-// Inside DashboardPage, replace the ShopPanel component with this enhanced version:
-
-function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete }) {
+function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete, showToast }) {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -496,7 +415,7 @@ function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete }
             style={inputStyle}
           />
           <input
-            placeholder="phoneNumber (optional)"
+            placeholder="Phone Number (optional)"
             value={form.phoneNumber}
             onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
             style={inputStyle}
@@ -661,12 +580,15 @@ const inputStyle = {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [queue, setQueue] = useState([]);
+  const [waitingList, setWaitingList] = useState([]);
+  const [currentToken, setCurrentToken] = useState(null);
+  const [totalWaiting, setTotalWaiting] = useState(0);
   const [shops, setShops] = useState([]);
   const [activeShop, setActiveShop] = useState(null);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [loadingShops, setLoadingShops] = useState(true);
   const [nextLoading, setNextLoading] = useState(false);
+  const [markDoneLoading, setMarkDoneLoading] = useState(false);
   const [toast, setToast] = useState({ type: '', text: '' });
 
   const showToast = (type, text) => setToast({ type, text });
@@ -686,15 +608,18 @@ export default function DashboardPage() {
     } finally {
       setLoadingShops(false);
     }
-  }, []);
+  }, [activeShop]);
 
   // ── fetch queue ────────────────────────────────────────────────────────────
   const fetchQueue = useCallback(async (shopId) => {
     if (!shopId) return;
     try {
       const { data } = await getQueue(shopId);
-      const list = Array.isArray(data) ? data : (data?.data || data?.queue || []);
-      setQueue(Array.isArray(list) ? list : []);
+      // Expected API response: { totalWaiting, currentToken, waitingList }
+      const queueData = data?.data || data;
+      setTotalWaiting(queueData?.totalWaiting ?? 0);
+      setCurrentToken(queueData?.currentToken ?? null);
+      setWaitingList(Array.isArray(queueData?.waitingList) ? queueData.waitingList : []);
     } catch (_) {
       showToast('error', 'Could not refresh queue');
     } finally {
@@ -761,13 +686,24 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDone = async (entryId) => {
+  const handleDone = async () => {
+    if (!activeShop || !currentToken) return;
+    setMarkDoneLoading(true);
     try {
-      await markDone(activeShop.id, entryId);
+      // Find the waiting entry that matches current token to get its ID
+      const servingEntry = waitingList.find(c => c.tokenNumber === currentToken);
+      if (servingEntry) {
+        await markDone(activeShop.id, servingEntry.id);
+      } else {
+        // If not found in waiting list, maybe it's already moved - just refresh
+        await fetchQueue(activeShop.id);
+      }
       await fetchQueue(activeShop.id);
       showToast('success', 'Customer marked done ✓');
     } catch (_) {
       showToast('error', 'Error marking done');
+    } finally {
+      setMarkDoneLoading(false);
     }
   };
 
@@ -781,8 +717,6 @@ export default function DashboardPage() {
     }
   };
 
-  const serving = queue.find((c) => c.status === 'Serving') ?? null;
-  const waiting = queue.filter((c) => c.status === 'Waiting');
   const avgServiceTime = Number(activeShop?.avgServiceTime ?? activeShop?.avgServiceTimeMinutes ?? 15);
 
   return (
@@ -878,20 +812,22 @@ export default function DashboardPage() {
             onCreate={handleCreateShop}
             onToggle={handleToggleShop}
             onDelete={handleDeleteShop}
+            showToast={showToast}
           />
         )}
 
         {activeShop && (
           <>
-            {/* Share link */}
-            <ShareCard shop={activeShop} />
-
             {/* Stats */}
-            <StatsBar queue={queue} />
+            <StatsBar waitingCount={totalWaiting} servingToken={currentToken} />
 
             {/* Serving now */}
-            {serving ? (
-              <ServingCard customer={serving} onDone={handleDone} shopId={activeShop.id} />
+            {currentToken ? (
+              <ServingCard
+                tokenNumber={currentToken}
+                onDone={handleDone}
+                loading={markDoneLoading}
+              />
             ) : (
               <div
                 style={{
@@ -932,8 +868,8 @@ export default function DashboardPage() {
                 >
                   Waiting Queue
                 </span>
-                <Badge color={waiting.length > 0 ? 'gold' : 'gray'}>
-                  {waiting.length} waiting
+                <Badge color={waitingList.length > 0 ? 'gold' : 'gray'}>
+                  {waitingList.length} waiting
                 </Badge>
               </div>
 
@@ -941,12 +877,12 @@ export default function DashboardPage() {
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
                   <Spinner size={24} />
                 </div>
-              ) : waiting.length === 0 ? (
+              ) : waitingList.length === 0 ? (
                 <div style={{ padding: '40px 20px', textAlign: 'center', color: 'rgba(245,240,232,0.25)', fontSize: 14 }}>
                   Queue is empty — all clear! ✓
                 </div>
               ) : (
-                waiting.map((c, i) => (
+                waitingList.map((c, i) => (
                   <QueueRow
                     key={c.id}
                     customer={c}
