@@ -29,9 +29,13 @@ apiClient.interceptors.response.use(
       const path = window.location.pathname;
       const authPages = ['/login', '/register', '/customer/login', '/customer/register'];
 
-      if (!authPages.includes(path)) {
-        window.location.href = path.startsWith('/customer') ? '/customer/login' : '/login';
-      }
+if (!authPages.includes(path)) {
+  if (path.startsWith('/customer/') || path === '/customer') {
+    window.location.href = '/customer/login';
+  } else {
+    window.location.href = '/login';
+  }
+}
     }
 
     return Promise.reject(error);
