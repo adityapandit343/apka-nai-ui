@@ -2,262 +2,89 @@
 
 Frontend base URL comes from `VITE_API_URL`.
 
-Total API operations currently used by the frontend: **15**.
+This contract was implemented from `D:/LatestCutbookApis/cutbook_api_docs.html`.
 
-## Auth
+## Authentication
 
-### 1. POST `/api/auth/register`
-Creates a shop-owner account and returns a token.
+- `POST /api/auth/register/customer` registers a customer.
+- `POST /api/auth/register/shopowner` registers a shop owner and starts the free trial.
+- `POST /api/auth/login` logs in either role.
 
-Request:
-```json
-{
-  "name": "Amit Kumar",
-  "email": "amit@example.com",
-  "phone": "9876543210",
-  "password": "secret123"
-}
-```
+Auth responses use:
 
-Response:
 ```json
 {
   "token": "jwt-token",
-  "user": {
-    "id": "owner-id",
-    "name": "Amit Kumar",
-    "email": "amit@example.com",
-    "phone": "9876543210"
-  }
+  "role": "Customer",
+  "userId": 1,
+  "fullName": "Rahul Sharma",
+  "email": "rahul@example.com"
 }
 ```
 
-### 2. POST `/api/auth/login`
-Logs in a shop owner.
+All non-auth endpoints require `Authorization: Bearer <token>`.
+
+## Shop Management
+
+- `POST /api/shop` creates a shop.
+- `PUT /api/shop` updates shop details.
+- `POST /api/shop/go-live` makes the shop visible in search.
+- `POST /api/shop/go-offline` hides the shop from search.
+- `GET /api/shop/my-shop` returns the owner shop.
+- `POST /api/shop/services` adds a service.
+- `DELETE /api/shop/services/{serviceId}` removes a service.
+
+## Shop Discovery
+
+- `POST /api/shop/search-nearby` finds live shops by location.
 
 Request:
+
 ```json
 {
-  "email": "amit@example.com",
-  "password": "secret123"
+  "latitude": 30.735,
+  "longitude": 76.778,
+  "radiusKm": 5,
+  "salonType": "Unisex"
 }
 ```
 
-Response: same as register.
+## Customer Queue Requests
 
-### 3. GET `/api/auth/me`
-Returns the logged-in owner. Requires `Authorization: Bearer <token>`.
+- `POST /api/queue/request` sends a haircut request to a shop.
+- `GET /api/queue/my-request` returns the customer's active request and token status.
 
-Response:
-```json
-{
-  "id": "owner-id",
-  "name": "Amit Kumar",
-  "email": "amit@example.com",
-  "phone": "9876543210"
-}
-```
+## Shop Owner Queue Management
 
-## Shops
+- `GET /api/queue/pending` returns incoming requests.
+- `POST /api/queue/accept/{requestId}` accepts a request and assigns a token.
+- `POST /api/queue/reject/{requestId}` rejects a request.
+- `GET /api/queue/live-queue` returns all non-done queue entries.
+- `POST /api/queue/next` completes the current customer and moves the next waiting customer to `InProgress`.
 
-### 4. GET `/api/shops`
-Returns shops owned by the logged-in owner.
-
-Response:
-```json
-[
-  {
-    "id": "shop-id",
-    "name": "Royal Cuts",
-    "address": "MG Road",
-    "phone": "9876543210",
-    "latitude": 28.6139,
-    "longitude": 77.209,
-    "avgServiceTime": 15,
-    "isOpen": true
-  }
-]
-```
-
-### 5. POST `/api/shops`
-Creates a shop. Requires auth.
-
-Request:
-```json
-{
-  "name": "Royal Cuts",
-  "address": "MG Road",
-  "phone": "9876543210",
-  "latitude": 28.6139,
-  "longitude": 77.209,
-  "avgServiceTime": 15
-}
-```
-
-Response: created shop object.
-
-### 6. DELETE `/api/shops/{shopId}`
-Deletes a shop owned by the logged-in owner.
-
-Response:
-```json
-{ "success": true }
-```
-
-### 7. PUT `/api/shops/{shopId}/toggle`
-Toggles open/closed status.
-
-Response:
-```json
-{
-  "id": "shop-id",
-  "isOpen": true
-}
-```
-
-### 8. GET `/api/shops/nearby?lat={lat}&lng={lng}&radiusKm=10`
-Customer discovery endpoint. Return open and closed shops within radius, sorted by distance first, then wait time.
-
-Response:
-```json
-[
-  {
-    "id": "shop-id",
-    "name": "Royal Cuts",
-    "address": "MG Road",
-    "phone": "9876543210",
-    "latitude": 28.6139,
-    "longitude": 77.209,
-    "distanceKm": 1.4,
-    "isOpen": true,
-    "avgRating": 4.7,
-    "queueSummary": {
-      "servingToken": 12,
-      "waitingCount": 4,
-      "estimatedWait": 60,
-      "avgServiceTime": 15
-    }
-  }
-]
-```
-
-## Queue
-
-Queue statuses used by the frontend:
+Queue status values used by the frontend:
 
 ```txt
 Waiting
-Serving
+InProgress
 Done
-NoShow
 ```
 
-### 9. GET `/api/shops/{shopId}/queue`
-Returns today's queue for a shop.
+Request status values used by the frontend:
 
-Response:
-```json
-{
-  "queue": [
-    {
-      "id": "entry-id",
-      "shopId": "shop-id",
-      "tokenNumber": 13,
-      "customerName": "Rahul",
-      "status": "Waiting",
-      "createdAt": "2026-05-10T10:00:00Z"
-    }
-  ],
-  "avgServiceTime": 15,
-  "estimatedWait": 45
-}
+```txt
+Pending
+Accepted
+Rejected
+Completed
+Cancelled
 ```
 
-The frontend also accepts a plain array response, but the object shape above is preferred.
+## SignalR Notes
 
-### 10. GET `/api/shops/{shopId}/queue/summary`
-Fast summary used by discovery and future realtime refresh.
+The supplied docs include `/hubs/shop` with these events:
 
-Response:
-```json
-{
-  "servingToken": 12,
-  "waitingCount": 4,
-  "estimatedWait": 60,
-  "avgServiceTime": 15
-}
-```
+- Shop owner: `NewRequest`, `QueueUpdated`
+- Customer: `RequestAccepted`, `RequestRejected`, `YourTurn`, `HaircutCompleted`
 
-### 11. POST `/api/shops/{shopId}/queue/join`
-Customer joins a queue.
-
-Request:
-```json
-{
-  "CustomerName": "Rahul"
-}
-```
-
-Response:
-```json
-{
-  "id": "entry-id",
-  "shopId": "shop-id",
-  "tokenNumber": 13,
-  "customerName": "Rahul",
-  "status": "Waiting",
-  "position": 4,
-  "estimatedWait": 60
-}
-```
-
-### 12. POST `/api/shops/{shopId}/queue/next`
-Moves the next waiting customer into `Serving`. Requires shop-owner auth.
-
-Response:
-```json
-{
-  "id": "entry-id",
-  "tokenNumber": 13,
-  "customerName": "Rahul",
-  "status": "Serving"
-}
-```
-
-### 13. PUT `/api/shops/{shopId}/queue/{entryId}/serving`
-Manually marks a queue entry as serving. Requires shop-owner auth.
-
-Response: updated queue entry.
-
-### 14. PUT `/api/shops/{shopId}/queue/{entryId}/done`
-Marks serving customer as done. Requires shop-owner auth.
-
-Response: updated queue entry.
-
-### 15. PUT `/api/shops/{shopId}/queue/{entryId}/noshow`
-Marks customer as no-show. Requires shop-owner auth.
-
-Response: updated queue entry.
-
-## Backend Production Notes
-
-Use PostgreSQL with PostGIS for nearby search:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS postgis;
-
-CREATE INDEX shops_location_gix
-ON shops
-USING GIST (location);
-```
-
-Store shop location as `geography(Point, 4326)`.
-
-Nearby query:
-
-```sql
-WHERE ST_DWithin(location, ST_MakePoint(:lng, :lat)::geography, :radiusKm * 1000)
-ORDER BY ST_Distance(location, ST_MakePoint(:lng, :lat)::geography)
-```
-
-Queue token creation must run inside a database transaction with row locking per shop and day. This prevents duplicate token numbers under high traffic.
+The current frontend uses polling every 8 seconds. SignalR can be added later without changing the REST service modules.

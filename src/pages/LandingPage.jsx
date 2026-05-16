@@ -15,27 +15,27 @@ export default function LandingPage() {
             Login
           </Link>
           <Link to="/register" className="rounded-md bg-gold px-5 py-2 font-semibold text-ink">
-            Free Shuru Karo
+            Start Free
           </Link>
         </div>
       </nav>
 
       <main className="mx-auto max-w-4xl px-4 py-20 text-center">
         <h1 className="font-playfair text-5xl font-bold leading-tight md:text-7xl">
-          Barber shop ka <br />
-          <span className="text-gold">wait khatam.</span>
+          End salon waiting <br />
+          <span className="text-gold">with live requests.</span>
           <br />
-          Paisa shuru.
+          Serve faster.
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-lg text-muted">
-          Customer ghar se token lo. Barber ek button se next bulao.
+          Customers request services from nearby salons. Shop owners accept requests, assign tokens, and manage the live queue.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link to="/customer/" className="inline-block rounded-lg bg-cream px-8 py-3 font-bold text-ink">
-            Nearby Salon Dhundo
+            Find Nearby Salons
           </Link>
           <Link to="/register" className="inline-block rounded-lg bg-gold px-8 py-3 font-bold text-ink">
-            Abhi Shuru Karo - Free
+            Start Free
           </Link>
         </div>
       </main>

@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DashboardShell from '../components/layout/DashboardShell';
 import { useAuth } from '../store/AuthContext';
-import { getShops } from '../services/shopService';
-
-const normalizeList = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.shops)) return payload.shops;
-  return [];
-};
+import { getMyShop } from '../services/shopService';
+import { getApiErrorMessage } from '../utils/apiError';
 
 function SettingsCard({ title, description, children }) {
   return (
@@ -55,7 +49,7 @@ function ReadinessRow({ label, done, detail }) {
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const [shops, setShops] = useState([]);
+  const [shop, setShop] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -64,10 +58,14 @@ export default function SettingsPage() {
     setError('');
 
     try {
-      const { data } = await getShops();
-      setShops(normalizeList(data));
+      const { data } = await getMyShop();
+      setShop(data);
     } catch (settingsError) {
-      setError(settingsError?.response?.data?.message || 'Could not load shop settings.');
+      if (settingsError.response?.status === 404) {
+        setShop(null);
+      } else {
+        setError(getApiErrorMessage(settingsError, 'Could not load shop settings.'));
+      }
     } finally {
       setLoading(false);
     }
@@ -78,18 +76,16 @@ export default function SettingsPage() {
   }, [loadSettings]);
 
   const readiness = useMemo(() => {
-    const hasShop = shops.length > 0;
-    const shopsWithLocation = shops.filter((shop) => shop.latitude && shop.longitude).length;
-    const openShops = shops.filter((shop) => Boolean(shop.isOpen ?? shop.isActive)).length;
+    const hasShop = Boolean(shop?.id);
+    const hasLocation = Boolean(shop?.latitude && shop?.longitude);
+    const isLive = Boolean(shop?.isLive);
 
     return {
       hasShop,
-      shopsWithLocation,
-      openShops,
-      allHaveLocation: hasShop && shopsWithLocation === shops.length,
-      hasOpenShop: openShops > 0,
+      hasLocation,
+      isLive,
     };
-  }, [shops]);
+  }, [shop]);
 
   return (
     <DashboardShell
@@ -112,11 +108,12 @@ export default function SettingsPage() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <SettingsCard title="Owner account" description="Profile data returned by /api/auth/me.">
+        <SettingsCard title="Owner account" description="Profile data stored from the latest auth response.">
           <div className="grid gap-4">
-            <Field label="Name" value={user?.name} />
+            <Field label="Name" value={user?.fullName || user?.name} />
             <Field label="Email" value={user?.email} />
-            <Field label="Phone" value={user?.phone} />
+            <Field label="Phone" value={user?.phoneNumber || user?.phone} />
+            <Field label="Role" value={user?.role} />
           </div>
         </SettingsCard>
 
@@ -128,28 +125,28 @@ export default function SettingsPage() {
           </div>
         </SettingsCard>
 
-        <SettingsCard title="Shop readiness" description="Nearby discovery needs shop location and open status.">
+        <SettingsCard title="Shop readiness" description="Nearby discovery needs shop location and live status.">
           <ReadinessRow
-            label="At least one shop created"
+            label="Shop created"
             done={readiness.hasShop}
-            detail={`${shops.length} shop${shops.length === 1 ? '' : 's'} found`}
+            detail={shop?.shopName || 'No shop found'}
           />
           <ReadinessRow
-            label="Shop latitude and longitude added"
-            done={readiness.allHaveLocation}
-            detail={`${readiness.shopsWithLocation}/${shops.length} shops ready for nearby search`}
+            label="Latitude and longitude added"
+            done={readiness.hasLocation}
+            detail={readiness.hasLocation ? `${shop.latitude}, ${shop.longitude}` : 'Location is required before going live'}
           />
           <ReadinessRow
-            label="At least one shop open"
-            done={readiness.hasOpenShop}
-            detail={`${readiness.openShops} shop${readiness.openShops === 1 ? '' : 's'} currently open`}
+            label="Shop is live"
+            done={readiness.isLive}
+            detail={readiness.isLive ? 'Customers can find this shop nearby' : 'Use Go live from the dashboard'}
           />
         </SettingsCard>
 
-        <SettingsCard title="Production notes" description="Recommended backend upgrades for editable settings.">
+        <SettingsCard title="Production notes" description="Current backend contract from the supplied API docs.">
           <div className="space-y-3 text-sm text-cream/55">
-            <p>Add `PUT /api/auth/me` when you want owner profile edits.</p>
-            <p>Add `PUT /api/shops/{'{shopId}'}` when you want editing shop name, address, phone, location, and average service time.</p>
+            <p>Owner profile editing is not documented yet.</p>
+            <p>Shop updates use `PUT /api/shop`; service edits use `/api/shop/services`.</p>
             <p>Use HTTPS in production and set `VITE_API_URL` to your live API domain.</p>
           </div>
         </SettingsCard>

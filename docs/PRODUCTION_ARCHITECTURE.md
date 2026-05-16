@@ -4,10 +4,11 @@
 
 1. Customer opens `/customer/`.
 2. Browser asks for location permission.
-3. Frontend calls `GET /api/shops/nearby?lat=&lng=&radiusKm=10`.
+3. Frontend calls `POST /api/shop/search-nearby`.
 4. Customer chooses a shop and opens `/customer/{shopId}`.
-5. Customer sees live queue summary and joins.
-6. Barber dashboard shows queue, calls next customer, marks done or no-show.
+5. Customer selects services and sends `POST /api/queue/request`.
+6. Barber dashboard accepts or rejects the request.
+7. Accepted customers receive a token and appear in `GET /api/queue/live-queue`.
 
 ## Recommended Backend Modules
 
@@ -110,20 +111,20 @@ Never generate token numbers in frontend.
 ## Frontend Structure
 
 ```txt
-src/services/endpoints.js
+src/constants/apiEndpoints.js
 Central API route map.
 
-src/services/api.js
+src/api/httpClient.js
 Axios client, auth token injection, timeout, 401 handling.
 
 src/pages/NearbyShopsPage.jsx
-Customer discovery within 10 km.
+Customer discovery by location.
 
 src/pages/CustomerPage.jsx
-Queue preview and join flow.
+Customer service request and token status flow.
 
 src/pages/DashboardPage.jsx
-Shop owner live queue dashboard.
+Shop owner request approval and live queue dashboard.
 ```
 
 ## Deployment Checklist

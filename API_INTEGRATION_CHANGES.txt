@@ -1,0 +1,178 @@
+CutBook Frontend - API Integration Changes Summary
+
+1. API architecture add ki gayi
+
+- src/api/httpClient.js
+  Axios client banaya gaya.
+  Isme base URL, timeout, auth token injection, aur global 401 unauthorized handling add hai.
+
+- src/constants/apiEndpoints.js
+  Saare backend API endpoints ek centralized file mein rakhe gaye hain.
+
+- src/utils/authStorage.js
+  Token aur user data ko localStorage mein save, read, aur clear karne ke helper functions banaye gaye.
+
+- src/utils/apiError.js
+  Backend validation/error messages ko clean format mein dikhane ke helpers add kiye gaye.
+
+
+2. Auth APIs integrate ki gayi
+
+- Customer register:
+  POST /api/auth/register/customer
+
+- Shop owner register:
+  POST /api/auth/register/shopowner
+
+- Login:
+  POST /api/auth/login
+
+- Auth response ke hisaab se token, role, userId, fullName, email store kiya ja raha hai.
+- 401 response aane par token clear hota hai aur user login page par redirect hota hai.
+- Customer ke liye separate routes add kiye:
+  /customer/login
+  /customer/register
+
+
+3. Shop APIs integrate ki gayi
+
+- Create shop:
+  POST /api/shop
+
+- View my shop:
+  GET /api/shop/my-shop
+
+- Go live:
+  POST /api/shop/go-live
+
+- Go offline:
+  POST /api/shop/go-offline
+
+- Add service:
+  POST /api/shop/services
+
+- Delete service:
+  DELETE /api/shop/services/{serviceId}
+
+- Dashboard par shop create form add/update kiya gaya.
+- Shop live/offline button backend API se connected hai.
+
+
+4. Customer discovery API integrate ki gayi
+
+- Nearby shop search ab documented API use karta hai:
+  POST /api/shop/search-nearby
+
+- Location, radiusKm, salonType backend ko send hota hai.
+- Nearby shops page real backend data show karta hai.
+- Selected shop ka data sessionStorage mein save hota hai taki customer request page par services show ho sakein.
+
+
+5. Queue and request APIs integrate ki gayi
+
+Customer side:
+
+- Send haircut request:
+  POST /api/queue/request
+
+- Check active request/token:
+  GET /api/queue/my-request
+
+- Customer page par service select, hair style, notes, request submit, pending/accepted token status implemented hai.
+
+Shop owner side:
+
+- Pending requests:
+  GET /api/queue/pending
+
+- Accept request:
+  POST /api/queue/accept/{requestId}
+
+- Reject request:
+  POST /api/queue/reject/{requestId}
+
+- Live queue:
+  GET /api/queue/live-queue
+
+- Complete current and call next:
+  POST /api/queue/next
+
+- Dashboard ab pending requests, live queue, current in-progress customer, waiting count, aur next customer flow show karta hai.
+
+
+6. Pages updated
+
+- src/pages/AuthPage.jsx
+  Customer aur shop-owner login/register support add kiya.
+  Clean English text use kiya.
+
+- src/pages/DashboardPage.jsx
+  Old mock/old queue structure replace karke real pending request and live queue API integration ki.
+
+- src/pages/CustomerPage.jsx
+  Old direct queue join flow replace karke real haircut request flow implement kiya.
+
+- src/pages/NearbyShopsPage.jsx
+  Real nearby search API connect ki.
+
+- src/pages/AnalyticsPage.jsx
+  Live queue API se analytics overview banaya.
+
+- src/pages/SettingsPage.jsx
+  My shop aur auth session data se readiness/settings show kiye.
+
+- src/pages/LandingPage.jsx
+  Mixed Hindi/English text replace karke clean English content add kiya.
+
+
+7. Environment configuration
+
+- .env.example add kiya gaya:
+  VITE_API_URL=http://localhost:8082
+
+- Actual backend URL ke liye project root mein .env file bana kar ye variable set karna hoga.
+
+
+8. Documentation updated
+
+- docs/API_ENDPOINTS.md
+  Supplied HTML API docs ke according updated.
+
+- docs/PRODUCTION_ARCHITECTURE.md
+  New request-based queue flow ke according updated.
+
+- README.md
+  Routes aur backend contract details update ki gayi.
+
+
+9. Build verification
+
+- npm.cmd run build successfully pass hua.
+- Vite dev server start ho gaya:
+  http://localhost:3000
+
+
+10. Missing backend APIs / dependencies found
+
+Supplied API docs mein ye old APIs available nahi hain, isliye frontend in par depend nahi karta:
+
+- GET /api/auth/me
+- DELETE shop API
+- Multiple shops list API
+- Manual no-show API
+- Manual mark done API
+- Old per-shop queue endpoints like /api/shops/{shopId}/queue
+
+SignalR docs mein available hai:
+
+- /hubs/shop
+- NewRequest
+- QueueUpdated
+- RequestAccepted
+- RequestRejected
+- YourTurn
+- HaircutCompleted
+
+Abhi frontend polling use karta hai har 8 seconds mein.
+Realtime SignalR future enhancement ke taur par add kiya ja sakta hai.
+

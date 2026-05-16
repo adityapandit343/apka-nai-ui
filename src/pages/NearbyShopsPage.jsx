@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   DEFAULT_SEARCH_RADIUS_KM,
   getNearbyShops,
+  rememberSelectedShop,
 } from '../services/customerDiscoveryService';
 import { useCustomerLocation } from '../hooks/useCustomerLocation';
 
@@ -45,9 +46,10 @@ function ShopResult({ shop }) {
 
       <Link
         to={`/customer/${shop.id}`}
+        onClick={() => rememberSelectedShop(shop)}
         className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-gold px-5 py-3 text-sm font-bold text-ink transition hover:bg-gold-light md:mt-0 md:w-auto md:shrink-0"
       >
-        View queue
+        Request service
       </Link>
     </article>
   );
@@ -72,8 +74,8 @@ function EmptyState({ hasSearched }) {
       </p>
       <p className="mx-auto mt-2 max-w-md text-sm text-cream/45">
         {hasSearched
-          ? 'Try again from a nearby market area, or increase coverage later from the backend.'
-          : 'Allow location access and CutBook will show open shops within 10 km.'}
+          ? 'Try again from a nearby market area or increase the search radius later.'
+          : 'Allow location access and CutBook will show live shops near you.'}
       </p>
     </div>
   );
@@ -130,10 +132,10 @@ export default function NearbyShopsPage() {
               Nearby search
             </p>
             <h1 className="mt-2 font-playfair text-4xl font-black leading-tight md:text-5xl">
-              Choose a salon within 10 km
+              Choose a salon near you
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-cream/50">
-              See distance, live queue, estimated wait time, and then join the queue from the shop page.
+              See distance, available services, and active queue size before sending a request.
             </p>
           </div>
 

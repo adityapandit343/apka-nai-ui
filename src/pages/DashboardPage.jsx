@@ -1,929 +1,455 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../store/AuthContext';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import DashboardShell from '../components/layout/DashboardShell';
 import {
-  getQueue,
+  createShop,
+  getMyShop,
+  goLive,
+  goOffline,
+  normalizeShop,
+} from '../services/shopService';
+import {
+  acceptRequest,
+  getLiveQueue,
+  getPendingRequests,
   nextCustomer,
-  markDone,
-  markNoShow,
+  rejectRequest,
 } from '../services/queueService';
-import { getShops, createShop, toggleShop, deleteShop } from '../services/shopService';
-import Sidebar from '../components/layout/Sidebar';
+import { getApiErrorMessage } from '../utils/apiError';
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
 const POLL_MS = 8000;
 
-function Badge({ children, color = 'gold' }) {
-  const map = {
-    gold: { bg: 'rgba(212,175,55,0.15)', color: '#D4AF37', border: 'rgba(212,175,55,0.3)' },
-    green: { bg: 'rgba(74,222,128,0.12)', color: '#4ADE80', border: 'rgba(74,222,128,0.3)' },
-    red: { bg: 'rgba(239,68,68,0.1)', color: '#F87171', border: 'rgba(239,68,68,0.25)' },
-    gray: { bg: 'rgba(255,255,255,0.07)', color: 'rgba(245,240,232,0.5)', border: 'rgba(255,255,255,0.12)' },
-  };
-  const s = map[color];
-  return (
-    <span
-      style={{
-        background: s.bg,
-        color: s.color,
-        border: `1px solid ${s.border}`,
-        padding: '3px 12px',
-        borderRadius: 20,
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        fontFamily: "'DM Sans', sans-serif",
-      }}
-    >
-      {children}
-    </span>
-  );
+const emptyShopForm = {
+  shopName: '',
+  description: '',
+  address: '',
+  phoneNumber: '',
+  latitude: '',
+  longitude: '',
+  salonType: 'Unisex',
+  openingTime: '09:00:00',
+  closingTime: '21:00:00',
+  services: [
+    { serviceName: 'Haircut', category: 'Hair', estimatedMinutes: 20, price: 150 },
+  ],
+};
+
+function Alert({ message, type = 'error' }) {
+  if (!message) return null;
+  const classes =
+    type === 'success'
+      ? 'border-green-400/30 bg-green-400/10 text-green-100'
+      : 'border-red-400/30 bg-red-400/10 text-red-100';
+  return <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${classes}`}>{message}</div>;
 }
 
-function Spinner({ size = 20 }) {
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        border: `2px solid rgba(212,175,55,0.2)`,
-        borderTop: `2px solid #D4AF37`,
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite',
-        flexShrink: 0,
-      }}
-    />
-  );
+function StatusPill({ status }) {
+  const normalized = String(status || 'Waiting');
+  const tone =
+    normalized === 'InProgress'
+      ? 'border-green-400/30 bg-green-400/10 text-green-300'
+      : normalized === 'Done'
+        ? 'border-white/10 bg-white/10 text-cream/50'
+        : normalized === 'Rejected'
+          ? 'border-red-400/30 bg-red-400/10 text-red-300'
+          : 'border-gold/30 bg-gold/10 text-gold';
+  return <span className={`rounded-md border px-2.5 py-1 text-xs font-bold ${tone}`}>{normalized}</span>;
 }
 
-function Toast({ message, onClose }) {
-  useEffect(() => {
-    if (!message.text) return;
-    const t = setTimeout(onClose, 3500);
-    return () => clearTimeout(t);
-  }, [message.text]);
-  if (!message.text) return null;
-  const isErr = message.type === 'error';
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 24,
-        right: 24,
-        zIndex: 9999,
-        background: isErr ? 'rgba(239,68,68,0.12)' : 'rgba(74,222,128,0.12)',
-        border: `1px solid ${isErr ? 'rgba(239,68,68,0.35)' : 'rgba(74,222,128,0.35)'}`,
-        color: isErr ? '#F87171' : '#4ADE80',
-        padding: '13px 20px',
-        borderRadius: 12,
-        fontSize: 14,
-        fontFamily: "'DM Sans', sans-serif",
-        fontWeight: 500,
-        backdropFilter: 'blur(8px)',
-        maxWidth: 340,
-        animation: 'slideIn 0.25s ease',
-      }}
-    >
-      {message.text}
-    </div>
-  );
-}
-
-// ─── Serving card ─────────────────────────────────────────────────────────────
-function ServingCard({ tokenNumber, onDone, loading }) {
-  return (
-    <div
-      style={{
-        background: 'linear-gradient(135deg, rgba(212,175,55,0.12) 0%, rgba(212,175,55,0.04) 100%)',
-        border: '1px solid rgba(212,175,55,0.3)',
-        borderRadius: 16,
-        padding: '20px 24px',
-        marginBottom: 24,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 16,
-        flexWrap: 'wrap',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: '50%',
-            background: 'rgba(212,175,55,0.15)',
-            border: '2px solid rgba(212,175,55,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontFamily: "'Playfair Display', serif",
-            fontWeight: 700,
-            fontSize: 18,
-            color: '#D4AF37',
-            flexShrink: 0,
-          }}
-        >
-          {tokenNumber}
-        </div>
-        <div>
-          <div
-            style={{
-              fontSize: 11,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: '#D4AF37',
-              marginBottom: 2,
-            }}
-          >
-            ● Serving Now
-          </div>
-          <div style={{ fontSize: 20, fontFamily: "'Playfair Display', serif", fontWeight: 700, color: '#F5F0E8' }}>
-            Token #{tokenNumber}
-          </div>
-        </div>
-      </div>
-      <button
-        onClick={onDone}
-        disabled={loading}
-        style={{
-          background: 'rgba(74,222,128,0.15)',
-          border: '1px solid rgba(74,222,128,0.35)',
-          color: '#4ADE80',
-          padding: '10px 24px',
-          borderRadius: 10,
-          fontSize: 14,
-          fontWeight: 700,
-          cursor: loading ? 'not-allowed' : 'pointer',
-          fontFamily: "'DM Sans', sans-serif",
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          transition: 'all 0.2s',
-          opacity: loading ? 0.6 : 1,
-          flexShrink: 0,
-        }}
-      >
-        {loading ? <Spinner size={14} /> : '✓'} Mark Done
-      </button>
-    </div>
-  );
-}
-
-// ─── Queue row ────────────────────────────────────────────────────────────────
-function QueueRow({ customer, position, avgServiceTime, onNoShow }) {
-  const [loading, setLoading] = useState(false);
-  const handle = async () => {
-    setLoading(true);
-    await onNoShow(customer.id);
-    setLoading(false);
-  };
-
-  const waitMin = position * (avgServiceTime ?? 15);
-
-  return (
-    <div
-      style={{
-        padding: '14px 20px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 16,
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        transition: 'background 0.15s',
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-    >
-      {/* position badge */}
-      <div
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.06)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 12,
-          fontWeight: 700,
-          color: 'rgba(245,240,232,0.5)',
-          flexShrink: 0,
-        }}
-      >
-        {position}
-      </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 500, color: '#F5F0E8' }}>
-          #{customer.tokenNumber} — {customer.customerName}
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(245,240,232,0.35)', marginTop: 2 }}>
-          Est. wait: ~{waitMin} min
-        </div>
-      </div>
-
-      <button
-        onClick={handle}
-        disabled={loading}
-        style={{
-          background: 'transparent',
-          border: '1px solid rgba(239,68,68,0.25)',
-          color: 'rgba(239,68,68,0.7)',
-          padding: '6px 14px',
-          borderRadius: 8,
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: loading ? 'not-allowed' : 'pointer',
-          fontFamily: "'DM Sans', sans-serif",
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          transition: 'all 0.2s',
-          flexShrink: 0,
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(239,68,68,0.08)';
-          e.currentTarget.style.color = '#F87171';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent';
-          e.currentTarget.style.color = 'rgba(239,68,68,0.7)';
-        }}
-      >
-        {loading ? <Spinner size={12} /> : '✕'} No Show
-      </button>
-    </div>
-  );
-}
-
-// ─── Stats bar ────────────────────────────────────────────────────────────────
-function StatsBar({ waitingCount, servingToken }) {
-  const stat = (label, value, accent = false) => (
-    <div
-      style={{
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 12,
-        padding: '14px 18px',
-        flex: 1,
-        minWidth: 80,
-        textAlign: 'center',
-      }}
-    >
-      <div
-        style={{
-          fontSize: 28,
-          fontWeight: 800,
-          fontFamily: "'Playfair Display', serif",
-          color: accent ? '#D4AF37' : '#F5F0E8',
-        }}
-      >
-        {value}
-      </div>
-      <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(245,240,232,0.35)', marginTop: 4 }}>
-        {label}
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-      {stat('Serving', servingToken ? `#${servingToken}` : '—', true)}
-      {stat('Waiting', waitingCount)}
-    </div>
-  );
-}
-
-// ─── Shop selector / creator ──────────────────────────────────────────────────
-function ShopPanel({ shops, activeShop, onSelect, onCreate, onToggle, onDelete, showToast }) {
-  const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    address: '',
-    phoneNumber: '',
-    latitude: '',
-    longitude: '',
-    avgServiceTime: 30,
-  });
-  const [saving, setSaving] = useState(false);
-  const [locating, setLocating] = useState(false);
-
-  const fetchCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      showToast('error', 'Geolocation is not supported by your browser');
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setForm(prev => ({
-          ...prev,
-          latitude: latitude.toFixed(6),
-          longitude: longitude.toFixed(6),
-        }));
-        setLocating(false);
-        showToast('success', 'Location captured ✓');
-      },
-      (error) => {
-        setLocating(false);
-        let message = 'Could not get location';
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            message = 'Location permission denied. Please allow access.';
-            break;
-          case error.POSITION_UNAVAILABLE:
-            message = 'Location information unavailable.';
-            break;
-          case error.TIMEOUT:
-            message = 'Location request timed out.';
-            break;
-        }
-        showToast('error', message);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+function ServiceEditor({ services, setServices }) {
+  const updateService = (index, field, value) => {
+    setServices((current) =>
+      current.map((service, serviceIndex) =>
+        serviceIndex === index ? { ...service, [field]: value } : service
+      )
     );
   };
 
-  const handleCreate = async () => {
-    if (!form.name.trim()) return;
-    setSaving(true);
-    await onCreate({
-      name: form.name.trim(),
-      address: form.address.trim(),
-      phoneNumber: form.phoneNumber.trim(),
-      latitude: form.latitude === '' ? null : Number(form.latitude),
-      longitude: form.longitude === '' ? null : Number(form.longitude),
-      avgServiceTime: Number(form.avgServiceTime) || 15,
-    });
-    setForm({ name: '', address: '', phoneNumber: '', latitude: '', longitude: '', avgServiceTime: 15 });
-    setCreating(false);
-    setSaving(false);
+  const addService = () => {
+    setServices((current) => [
+      ...current,
+      { serviceName: '', category: 'Hair', estimatedMinutes: 20, price: 0 },
+    ]);
+  };
+
+  const removeService = (index) => {
+    setServices((current) => current.filter((_, serviceIndex) => serviceIndex !== index));
   };
 
   return (
-    <div
-      style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 16,
-        padding: 20,
-        marginBottom: 24,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(245,240,232,0.4)' }}>
-          Your Shops
-        </div>
-        <button
-          onClick={() => setCreating((v) => !v)}
-          style={{
-            background: 'rgba(212,175,55,0.12)',
-            border: '1px solid rgba(212,175,55,0.25)',
-            color: '#D4AF37',
-            padding: '5px 14px',
-            borderRadius: 8,
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: "'DM Sans', sans-serif",
-          }}
-        >
-          {creating ? 'Cancel' : '+ New Shop'}
-        </button>
-      </div>
-
-      {creating && (
-        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="grid gap-3">
+      {services.map((service, index) => (
+        <div key={index} className="grid gap-3 rounded-lg border border-white/10 bg-black/20 p-3 md:grid-cols-[1fr_120px_120px_120px_auto]">
           <input
-            placeholder="Shop name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            style={inputStyle}
+            className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/40"
+            placeholder="Service name"
+            value={service.serviceName}
+            onChange={(event) => updateService(index, 'serviceName', event.target.value)}
+            required
           />
-          <input
-            placeholder="Address (optional)"
-            value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
-            style={inputStyle}
-          />
-          <input
-            placeholder="Phone Number (optional)"
-            value={form.phoneNumber}
-            onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
-            style={inputStyle}
-          />
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <input
-                type="number"
-                step="any"
-                placeholder="Latitude"
-                value={form.latitude}
-                onChange={(e) => setForm({ ...form, latitude: e.target.value })}
-                style={inputStyle}
-              />
-              <input
-                type="number"
-                step="any"
-                placeholder="Longitude"
-                value={form.longitude}
-                onChange={(e) => setForm({ ...form, longitude: e.target.value })}
-                style={inputStyle}
-              />
-            </div>
-            <button
-              onClick={fetchCurrentLocation}
-              disabled={locating}
-              style={{
-                background: 'rgba(212,175,55,0.12)',
-                border: '1px solid rgba(212,175,55,0.3)',
-                color: '#D4AF37',
-                padding: '10px 14px',
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: locating ? 'not-allowed' : 'pointer',
-                whiteSpace: 'nowrap',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontFamily: "'DM Sans', sans-serif",
-              }}
-            >
-              {locating ? <Spinner size={12} /> : '📍 Use My Location'}
-            </button>
-          </div>
+          <select
+            className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm outline-none focus:border-gold/40"
+            value={service.category}
+            onChange={(event) => updateService(index, 'category', event.target.value)}
+          >
+            <option>Hair</option>
+            <option>Beard</option>
+            <option>Skin</option>
+            <option>Other</option>
+          </select>
           <input
             type="number"
             min="1"
-            max="120"
-            placeholder="Average service time in minutes"
-            value={form.avgServiceTime}
-            onChange={(e) => setForm({ ...form, avgServiceTime: e.target.value })}
-            style={inputStyle}
+            className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/40"
+            placeholder="Minutes"
+            value={service.estimatedMinutes}
+            onChange={(event) => updateService(index, 'estimatedMinutes', Number(event.target.value))}
+            required
+          />
+          <input
+            type="number"
+            min="0"
+            className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/40"
+            placeholder="Price"
+            value={service.price}
+            onChange={(event) => updateService(index, 'price', Number(event.target.value))}
+            required
           />
           <button
-            onClick={handleCreate}
-            disabled={saving}
-            style={{
-              background: '#D4AF37',
-              color: '#0D0D0D',
-              border: 'none',
-              borderRadius: 8,
-              padding: '10px',
-              fontWeight: 700,
-              cursor: saving ? 'not-allowed' : 'pointer',
-              fontFamily: "'DM Sans', sans-serif",
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
+            type="button"
+            onClick={() => removeService(index)}
+            disabled={services.length === 1}
+            className="rounded-md border border-red-400/25 px-3 py-2 text-sm font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {saving ? <Spinner size={14} /> : 'Create Shop'}
+            Remove
           </button>
         </div>
-      )}
+      ))}
+      <button
+        type="button"
+        onClick={addService}
+        className="w-fit rounded-lg border border-gold/30 px-4 py-2 text-sm font-semibold text-gold hover:bg-gold/10"
+      >
+        Add service
+      </button>
+    </div>
+  );
+}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {shops.map((shop) => (
-          <div
-            key={shop.id}
-            onClick={() => onSelect(shop)}
-            style={{
-              padding: '12px 16px',
-              borderRadius: 10,
-              background: activeShop?.id === shop.id ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${activeShop?.id === shop.id ? 'rgba(212,175,55,0.3)' : 'rgba(255,255,255,0.06)'}`,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              transition: 'all 0.15s',
-              gap: 10,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: activeShop?.id === shop.id ? '#D4AF37' : '#F5F0E8' }}>
-                {shop.name}
-              </div>
-              {shop.address && (
-                <div style={{ fontSize: 11, color: 'rgba(245,240,232,0.35)', marginTop: 2 }}>{shop.address}</div>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => onToggle(shop.id)}
-                style={{
-                  background: shop.isOpen ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${shop.isOpen ? 'rgba(74,222,128,0.25)' : 'rgba(255,255,255,0.1)'}`,
-                  color: shop.isOpen ? '#4ADE80' : 'rgba(245,240,232,0.35)',
-                  padding: '4px 12px',
-                  borderRadius: 6,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: "'DM Sans', sans-serif",
-                }}
-              >
-                {shop.isOpen ? 'Open' : 'Closed'}
-              </button>
-              <button
-                onClick={() => onDelete(shop.id)}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid rgba(239,68,68,0.2)',
-                  color: 'rgba(239,68,68,0.5)',
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  fontSize: 11,
-                  cursor: 'pointer',
-                  fontFamily: "'DM Sans', sans-serif",
-                }}
-              >
-                Del
-              </button>
-            </div>
-          </div>
-        ))}
-        {shops.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '20px', color: 'rgba(245,240,232,0.25)', fontSize: 13 }}>
-            No shops yet — create one above.
-          </div>
-        )}
+function ShopSetup({ onCreated }) {
+  const [form, setForm] = useState(emptyShopForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const updateField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const setServices = (updater) =>
+    setForm((current) => ({
+      ...current,
+      services: typeof updater === 'function' ? updater(current.services) : updater,
+    }));
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Location is not supported in this browser.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        updateField('latitude', coords.latitude.toFixed(6));
+        updateField('longitude', coords.longitude.toFixed(6));
+      },
+      () => setError('Could not capture location. Enter latitude and longitude manually.'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+
+    try {
+      const { data } = await createShop({
+        ...form,
+        latitude: form.latitude === '' ? null : Number(form.latitude),
+        longitude: form.longitude === '' ? null : Number(form.longitude),
+      });
+      onCreated(normalizeShop(data));
+    } catch (shopError) {
+      setError(getApiErrorMessage(shopError, 'Could not create shop.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+      <div className="mb-5">
+        <h2 className="font-playfair text-2xl font-bold">Create your shop</h2>
+        <p className="mt-1 text-sm text-cream/45">A shop is required before customers can send requests.</p>
+      </div>
+
+      <Alert message={error} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <input className="rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40" placeholder="Shop name" value={form.shopName} onChange={(event) => updateField('shopName', event.target.value)} required />
+        <input className="rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40" placeholder="Phone number" value={form.phoneNumber} onChange={(event) => updateField('phoneNumber', event.target.value)} required />
+        <input className="rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40 md:col-span-2" placeholder="Address" value={form.address} onChange={(event) => updateField('address', event.target.value)} required />
+        <textarea className="min-h-24 rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40 md:col-span-2" placeholder="Description" value={form.description} onChange={(event) => updateField('description', event.target.value)} />
+        <select className="rounded-lg border border-white/10 bg-ink px-4 py-3 outline-none focus:border-gold/40" value={form.salonType} onChange={(event) => updateField('salonType', event.target.value)}>
+          <option>Male</option>
+          <option>Female</option>
+          <option>Unisex</option>
+        </select>
+        <div className="grid grid-cols-2 gap-3">
+          <input type="time" className="rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40" value={form.openingTime.slice(0, 5)} onChange={(event) => updateField('openingTime', `${event.target.value}:00`)} />
+          <input type="time" className="rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40" value={form.closingTime.slice(0, 5)} onChange={(event) => updateField('closingTime', `${event.target.value}:00`)} />
+        </div>
+        <input type="number" step="any" className="rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40" placeholder="Latitude" value={form.latitude} onChange={(event) => updateField('latitude', event.target.value)} />
+        <input type="number" step="any" className="rounded-lg border border-white/10 bg-black/20 px-4 py-3 outline-none focus:border-gold/40" placeholder="Longitude" value={form.longitude} onChange={(event) => updateField('longitude', event.target.value)} />
+      </div>
+
+      <button type="button" onClick={useCurrentLocation} className="mt-3 rounded-lg border border-gold/30 px-4 py-2 text-sm font-semibold text-gold hover:bg-gold/10">
+        Use my current location
+      </button>
+
+      <div className="mt-6">
+        <h3 className="mb-3 text-sm font-bold uppercase tracking-[0.14em] text-cream/35">Services</h3>
+        <ServiceEditor services={form.services} setServices={setServices} />
+      </div>
+
+      <button disabled={saving} className="mt-6 rounded-lg bg-gold px-5 py-3 text-sm font-bold text-ink transition hover:bg-gold-light disabled:cursor-not-allowed disabled:bg-gold/50">
+        {saving ? 'Creating shop...' : 'Create shop'}
+      </button>
+    </form>
+  );
+}
+
+function RequestCard({ request, onAccept, onReject, busy }) {
+  return (
+    <article className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <h3 className="font-semibold text-cream">{request.customerName}</h3>
+          <p className="mt-1 text-sm text-cream/45">{request.customerPhone || 'No phone number'}</p>
+          <p className="mt-3 text-sm text-cream/65">{request.hairStyle || 'No hairstyle preference added.'}</p>
+          <p className="mt-2 text-xs text-cream/35">{request.requestedServiceNames.join(', ') || 'No services listed'}</p>
+        </div>
+        <StatusPill status={request.status} />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <button disabled={busy} onClick={() => onAccept(request.id)} className="rounded-lg bg-gold px-4 py-2 text-sm font-bold text-ink disabled:opacity-50">
+          Accept
+        </button>
+        <button disabled={busy} onClick={() => onReject(request.id)} className="rounded-lg border border-red-400/30 px-4 py-2 text-sm font-bold text-red-300 disabled:opacity-50">
+          Reject
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function QueueTable({ queue }) {
+  if (!queue.length) {
+    return <div className="rounded-xl border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-cream/45">No live queue entries yet.</div>;
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-cream/35">
+              <th className="px-4 py-3 text-left">Position</th>
+              <th className="px-4 py-3 text-left">Token</th>
+              <th className="px-4 py-3 text-left">Customer</th>
+              <th className="px-4 py-3 text-left">Services</th>
+              <th className="px-4 py-3 text-right">Minutes</th>
+              <th className="px-4 py-3 text-right">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {queue.map((entry) => (
+              <tr key={entry.id || entry.tokenNumber} className="border-b border-white/10 last:border-b-0">
+                <td className="px-4 py-4 text-cream/70">{entry.position || '-'}</td>
+                <td className="px-4 py-4 font-bold text-gold">#{entry.tokenNumber || '-'}</td>
+                <td className="px-4 py-4 text-cream">{entry.customerName}</td>
+                <td className="px-4 py-4 text-cream/55">{entry.services.join(', ') || '-'}</td>
+                <td className="px-4 py-4 text-right text-cream/70">{entry.totalEstimatedMinutes}</td>
+                <td className="px-4 py-4 text-right"><StatusPill status={entry.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-const inputStyle = {
-  background: 'rgba(255,255,255,0.07)',
-  border: '1px solid rgba(255,255,255,0.12)',
-  borderRadius: 8,
-  padding: '10px 14px',
-  fontSize: 14,
-  color: '#F5F0E8',
-  outline: 'none',
-  fontFamily: "'DM Sans', sans-serif",
-  width: '100%',
-  boxSizing: 'border-box',
-};
-
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { user } = useAuth();
-  const [waitingList, setWaitingList] = useState([]);
-  const [currentToken, setCurrentToken] = useState(null);
-  const [totalWaiting, setTotalWaiting] = useState(0);
-  const [shops, setShops] = useState([]);
-  const [activeShop, setActiveShop] = useState(null);
-  const [loadingQueue, setLoadingQueue] = useState(true);
-  const [loadingShops, setLoadingShops] = useState(true);
-  const [nextLoading, setNextLoading] = useState(false);
-  const [markDoneLoading, setMarkDoneLoading] = useState(false);
-  const [toast, setToast] = useState({ type: '', text: '' });
+  const [shop, setShop] = useState(null);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [liveQueue, setLiveQueue] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  const showToast = (type, text) => setToast({ type, text });
-  const clearToast = () => setToast({ type: '', text: '' });
+  const loadDashboard = useCallback(async () => {
+    setError('');
 
-  // ── fetch shops ────────────────────────────────────────────────────────────
-  const fetchShops = useCallback(async () => {
     try {
-      const { data } = await getShops();
-      const list = Array.isArray(data) ? data : (data?.data || []);
-      setShops(list);
-      if (list.length > 0 && !activeShop) {
-        setActiveShop(list[0]);
+      const [shopResponse, pendingResponse, queueResponse] = await Promise.allSettled([
+        getMyShop(),
+        getPendingRequests(),
+        getLiveQueue(),
+      ]);
+
+      if (shopResponse.status === 'fulfilled') {
+        setShop(shopResponse.value.data);
+      } else if (shopResponse.reason?.response?.status !== 404) {
+        throw shopResponse.reason;
       }
-    } catch (_) {
-      showToast('error', 'Could not load shops');
-    } finally {
-      setLoadingShops(false);
-    }
-  }, [activeShop]);
 
-  // ── fetch queue ────────────────────────────────────────────────────────────
-  const fetchQueue = useCallback(async (shopId) => {
-    if (!shopId) return;
-    try {
-      const { data } = await getQueue(shopId);
-      // Expected API response: { totalWaiting, currentToken, waitingList }
-      const queueData = data?.data || data;
-      setTotalWaiting(queueData?.totalWaiting ?? 0);
-      setCurrentToken(queueData?.currentToken ?? null);
-      setWaitingList(Array.isArray(queueData?.waitingList) ? queueData.waitingList : []);
-    } catch (_) {
-      showToast('error', 'Could not refresh queue');
+      setPendingRequests(pendingResponse.status === 'fulfilled' ? pendingResponse.value.data : []);
+      setLiveQueue(queueResponse.status === 'fulfilled' ? queueResponse.value.data : []);
+    } catch (dashboardError) {
+      setError(getApiErrorMessage(dashboardError, 'Could not load dashboard.'));
     } finally {
-      setLoadingQueue(false);
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchShops(); }, [fetchShops]);
   useEffect(() => {
-    if (!activeShop) return;
-    setLoadingQueue(true);
-    fetchQueue(activeShop.id);
-    const id = setInterval(() => fetchQueue(activeShop.id), POLL_MS);
-    return () => clearInterval(id);
-  }, [activeShop, fetchQueue]);
+    loadDashboard();
+    const intervalId = setInterval(loadDashboard, POLL_MS);
+    return () => clearInterval(intervalId);
+  }, [loadDashboard]);
 
-  // ── shop actions ───────────────────────────────────────────────────────────
-  const handleCreateShop = async (form) => {
-    try {
-      const { data } = await createShop(form);
-      await fetchShops();
-      if (data?.id) setActiveShop(data);
-      showToast('success', `"${form.name}" created!`);
-    } catch (_) {
-      showToast('error', 'Could not create shop');
-    }
-  };
+  const runAction = async (action, successMessage) => {
+    setActionLoading(true);
+    setError('');
+    setSuccess('');
 
-  const handleToggleShop = async (id) => {
     try {
-      await toggleShop(id);
-      await fetchShops();
-      showToast('success', 'Shop status updated');
-    } catch (_) {
-      showToast('error', 'Could not toggle shop');
-    }
-  };
-
-  const handleDeleteShop = async (id) => {
-    if (!window.confirm('Delete this shop? This cannot be undone.')) return;
-    try {
-      await deleteShop(id);
-      const remaining = shops.filter((s) => s.id !== id);
-      setShops(remaining);
-      if (activeShop?.id === id) setActiveShop(remaining[0] ?? null);
-      showToast('success', 'Shop deleted');
-    } catch (_) {
-      showToast('error', 'Could not delete shop');
-    }
-  };
-
-  // ── queue actions ──────────────────────────────────────────────────────────
-  const handleNext = async () => {
-    if (!activeShop) return;
-    setNextLoading(true);
-    try {
-      await nextCustomer(activeShop.id);
-      await fetchQueue(activeShop.id);
-      showToast('success', 'Called next customer');
-    } catch (_) {
-      showToast('error', 'Could not call next customer');
+      await action();
+      setSuccess(successMessage);
+      await loadDashboard();
+    } catch (actionError) {
+      setError(getApiErrorMessage(actionError));
     } finally {
-      setNextLoading(false);
+      setActionLoading(false);
     }
   };
 
-  const handleDone = async () => {
-    if (!activeShop || !currentToken) return;
-    setMarkDoneLoading(true);
-    try {
-      // Find the waiting entry that matches current token to get its ID
-      const servingEntry = waitingList.find(c => c.tokenNumber === currentToken);
-      if (servingEntry) {
-        await markDone(activeShop.id, servingEntry.id);
-      } else {
-        // If not found in waiting list, maybe it's already moved - just refresh
-        await fetchQueue(activeShop.id);
-      }
-      await fetchQueue(activeShop.id);
-      showToast('success', 'Customer marked done ✓');
-    } catch (_) {
-      showToast('error', 'Error marking done');
-    } finally {
-      setMarkDoneLoading(false);
-    }
-  };
+  const currentCustomer = useMemo(
+    () => liveQueue.find((entry) => entry.status === 'InProgress'),
+    [liveQueue]
+  );
 
-  const handleNoShow = async (entryId) => {
-    try {
-      await markNoShow(activeShop.id, entryId);
-      await fetchQueue(activeShop.id);
-      showToast('success', 'Marked as no-show');
-    } catch (_) {
-      showToast('error', 'Error marking no-show');
-    }
-  };
-
-  const avgServiceTime = Number(activeShop?.avgServiceTime ?? activeShop?.avgServiceTimeMinutes ?? 15);
+  const waitingCount = liveQueue.filter((entry) => entry.status === 'Waiting').length;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        minHeight: '100vh',
-        background: '#0D0D0D',
-        color: '#F5F0E8',
-        fontFamily: "'DM Sans', sans-serif",
-      }}
-    >
-      <Sidebar />
-
-      <main
-        className="dashboard-main"
-        style={{
-          flex: 1,
-          padding: '32px 40px',
-          maxWidth: '100%',
-          overflowX: 'hidden',
-        }}
-      >
-        <Toast message={toast} onClose={clearToast} />
-
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 32,
-            flexWrap: 'wrap',
-            gap: 16,
-          }}
-        >
-          <div>
-            <h1
-              style={{
-                fontFamily: "'Playfair Display', serif",
-                fontSize: 32,
-                fontWeight: 700,
-                margin: 0,
-                lineHeight: 1.1,
-              }}
-            >
-              Live Queue
-            </h1>
-            {activeShop && (
-              <p style={{ color: 'rgba(245,240,232,0.4)', margin: '6px 0 0', fontSize: 14 }}>
-                {activeShop.name}
-                {activeShop.isOpen
-                  ? ' · 🟢 Open'
-                  : ' · 🔴 Closed'}
-              </p>
-            )}
-          </div>
-          <button
-            onClick={handleNext}
-            disabled={nextLoading || !activeShop}
-            style={{
-              background: nextLoading ? 'rgba(212,175,55,0.4)' : '#D4AF37',
-              color: '#0D0D0D',
-              border: 'none',
-              borderRadius: 10,
-              padding: '12px 28px',
-              fontSize: 15,
-              fontWeight: 700,
-              cursor: nextLoading || !activeShop ? 'not-allowed' : 'pointer',
-              fontFamily: "'DM Sans', sans-serif",
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              transition: 'all 0.2s',
-              flexShrink: 0,
-            }}
-          >
-            {nextLoading ? <Spinner size={16} /> : null}
-            Next Customer →
+    <DashboardShell
+      title="Live Queue"
+      subtitle="Review incoming requests, call the next customer, and control shop visibility."
+      actions={
+        <>
+          <button onClick={loadDashboard} disabled={loading} className="rounded-lg border border-gold/30 px-4 py-2 text-sm font-semibold text-gold hover:bg-gold/10 disabled:opacity-50">
+            {loading ? 'Refreshing...' : 'Refresh'}
           </button>
-        </div>
-
-        {/* Shop panel */}
-        {loadingShops ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
-            <Spinner size={28} />
-          </div>
-        ) : (
-          <ShopPanel
-            shops={shops}
-            activeShop={activeShop}
-            onSelect={setActiveShop}
-            onCreate={handleCreateShop}
-            onToggle={handleToggleShop}
-            onDelete={handleDeleteShop}
-            showToast={showToast}
-          />
-        )}
-
-        {activeShop && (
-          <>
-            {/* Stats */}
-            <StatsBar waitingCount={totalWaiting} servingToken={currentToken} />
-
-            {/* Serving now */}
-            {currentToken ? (
-              <ServingCard
-                tokenNumber={currentToken}
-                onDone={handleDone}
-                loading={markDoneLoading}
-              />
-            ) : (
-              <div
-                style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px dashed rgba(255,255,255,0.1)',
-                  borderRadius: 14,
-                  padding: '24px',
-                  textAlign: 'center',
-                  color: 'rgba(245,240,232,0.3)',
-                  fontSize: 14,
-                  marginBottom: 24,
-                }}
-              >
-                No one being served right now — press "Next Customer" to begin.
-              </div>
-            )}
-
-            {/* Waiting list */}
-            <div
-              style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.07)',
-                borderRadius: 16,
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  padding: '16px 20px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  borderBottom: '1px solid rgba(255,255,255,0.06)',
-                }}
-              >
-                <span
-                  style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(245,240,232,0.4)' }}
-                >
-                  Waiting Queue
-                </span>
-                <Badge color={waitingList.length > 0 ? 'gold' : 'gray'}>
-                  {waitingList.length} waiting
-                </Badge>
-              </div>
-
-              {loadingQueue ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-                  <Spinner size={24} />
-                </div>
-              ) : waitingList.length === 0 ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'rgba(245,240,232,0.25)', fontSize: 14 }}>
-                  Queue is empty — all clear! ✓
-                </div>
-              ) : (
-                waitingList.map((c, i) => (
-                  <QueueRow
-                    key={c.id}
-                    customer={c}
-                    position={i + 1}
-                    avgServiceTime={avgServiceTime}
-                    onNoShow={handleNoShow}
-                  />
-                ))
+          {shop && (
+            <button
+              disabled={actionLoading}
+              onClick={() => runAction(
+                () => shop.isLive ? goOffline() : goLive({ latitude: shop.latitude, longitude: shop.longitude }),
+                shop.isLive ? 'Shop is now offline.' : 'Shop is now live.'
               )}
+              className="rounded-lg bg-gold px-4 py-2 text-sm font-bold text-ink hover:bg-gold-light disabled:opacity-50"
+            >
+              {shop.isLive ? 'Go offline' : 'Go live'}
+            </button>
+          )}
+        </>
+      }
+    >
+      <Alert message={error} />
+      <Alert message={success} type="success" />
+
+      {loading ? (
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-cream/45">Loading dashboard...</div>
+      ) : !shop ? (
+        <ShopSetup onCreated={setShop} />
+      ) : (
+        <div className="grid gap-6">
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="font-playfair text-4xl font-black text-gold">{pendingRequests.length}</div>
+              <div className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-cream/35">Pending requests</div>
             </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="font-playfair text-4xl font-black text-cream">{waitingCount}</div>
+              <div className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-cream/35">Waiting</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="font-playfair text-4xl font-black text-green-300">{currentCustomer?.tokenNumber ? `#${currentCustomer.tokenNumber}` : '-'}</div>
+              <div className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-cream/35">In progress</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="font-playfair text-4xl font-black text-cream">{shop.isLive ? 'Live' : 'Offline'}</div>
+              <div className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-cream/35">{shop.shopName}</div>
+            </div>
+          </section>
 
-            <p style={{ textAlign: 'center', color: 'rgba(245,240,232,0.2)', fontSize: 11, marginTop: 16 }}>
-              Auto-refreshes every {POLL_MS / 1000}s
-            </p>
-          </>
-        )}
+          <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div>
+                <h2 className="font-playfair text-2xl font-bold">Current service</h2>
+                <p className="mt-1 text-sm text-cream/45">
+                  {currentCustomer ? `${currentCustomer.customerName} is in progress.` : 'No customer is currently in progress.'}
+                </p>
+              </div>
+              <button
+                disabled={actionLoading}
+                onClick={() => runAction(nextCustomer, 'Next customer called.')}
+                className="rounded-lg bg-gold px-5 py-3 text-sm font-bold text-ink hover:bg-gold-light disabled:opacity-50"
+              >
+                Complete and call next
+              </button>
+            </div>
+          </section>
 
-        {!activeShop && !loadingShops && (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '60px 20px',
-              color: 'rgba(245,240,232,0.3)',
-              fontSize: 16,
-            }}
-          >
-            Create a shop above to get started.
-          </div>
-        )}
-      </main>
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-playfair text-2xl font-bold">Incoming requests</h2>
+              <span className="text-sm text-cream/35">{pendingRequests.length} pending</span>
+            </div>
+            {pendingRequests.length ? (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {pendingRequests.map((request) => (
+                  <RequestCard
+                    key={request.id}
+                    request={request}
+                    busy={actionLoading}
+                    onAccept={(id) => runAction(() => acceptRequest(id), 'Request accepted.')}
+                    onReject={(id) => runAction(() => rejectRequest(id), 'Request rejected.')}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-cream/45">No pending requests.</div>
+            )}
+          </section>
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
-        .dashboard-main { margin-left: 256px; padding-bottom: 32px; }
-        @media (max-width: 767px) {
-          .dashboard-main { margin-left: 0; padding: 24px 16px 88px !important; }
-        }
-        * { box-sizing: border-box; }
-        ::placeholder { color: rgba(245,240,232,0.3); }
-      `}</style>
-    </div>
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-playfair text-2xl font-bold">Live queue</h2>
+              <span className="text-sm text-cream/35">Refreshes every {POLL_MS / 1000}s</span>
+            </div>
+            <QueueTable queue={liveQueue} />
+          </section>
+        </div>
+      )}
+    </DashboardShell>
   );
 }

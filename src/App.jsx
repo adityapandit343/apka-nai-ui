@@ -15,8 +15,10 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<AuthPage mode="login" />} />
-          <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/login" element={<AuthPage mode="login" role="ShopOwner" />} />
+          <Route path="/register" element={<AuthPage mode="register" role="ShopOwner" />} />
+          <Route path="/customer/login" element={<AuthPage mode="login" role="Customer" />} />
+          <Route path="/customer/register" element={<AuthPage mode="register" role="Customer" />} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/analytics/" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
           <Route path="/dashboard/settings/" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />

@@ -1,14 +1,19 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
+import { getApiErrorMessage } from '../utils/apiError';
 
-export default function AuthPage({ mode }) {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
+export default function AuthPage({ mode, role = 'ShopOwner' }) {
+  const [form, setForm] = useState({ fullName: '', email: '', phoneNumber: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const isLogin = mode === 'login';
+  const isCustomer = role === 'Customer';
+  const registerPath = isCustomer ? '/customer/register' : '/register';
+  const loginPath = isCustomer ? '/customer/login' : '/login';
 
   const showMessage = (type, text) => {
     setMessage({ type, text });
@@ -29,14 +34,14 @@ export default function AuthPage({ mode }) {
         await login({ email: form.email, password: form.password });
         showMessage('success', 'Login successful. Redirecting...');
       } else {
-        await register(form);
+        await register(form, role);
         showMessage('success', 'Account created. Welcome.');
       }
 
-      setTimeout(() => navigate('/dashboard'), 500);
+      const redirectTo = location.state?.from?.pathname || (isCustomer ? '/customer/' : '/dashboard');
+      setTimeout(() => navigate(redirectTo), 500);
     } catch (error) {
-      const errorMsg = error.response?.data?.message || error.message || 'Authentication failed';
-      showMessage('error', errorMsg);
+      showMessage('error', getApiErrorMessage(error, 'Authentication failed.'));
       setLoading(false);
     }
   };
@@ -49,10 +54,14 @@ export default function AuthPage({ mode }) {
             CutBook
           </Link>
           <h2 className="mt-10 font-playfair text-4xl font-bold">
-            {isLogin ? 'Wapas aao, Ustaa.' : 'Apni shop digital karo.'}
+            {isCustomer
+              ? isLogin ? 'Welcome back.' : 'Create your customer account.'
+              : isLogin ? 'Welcome back.' : 'Bring your shop online.'}
           </h2>
           <p className="mt-2 text-muted">
-            {isLogin ? 'Queue manage karo' : '5 minute mein setup'}
+            {isCustomer
+              ? 'Find salons, request services, and track your turn.'
+              : 'Manage requests, live queues, and shop availability.'}
           </p>
         </div>
       </aside>
@@ -61,10 +70,12 @@ export default function AuthPage({ mode }) {
         <form onSubmit={handleSubmit} className="w-full max-w-md space-y-4">
           <div>
             <h1 className="font-playfair text-3xl font-bold">
-              {isLogin ? 'Login' : 'Account Banao'}
+              {isLogin ? 'Login' : 'Create account'}
             </h1>
             <p className="mt-1 text-sm text-muted">
-              {isLogin ? 'Use your shop owner account.' : 'Create your owner account to add shops.'}
+              {isLogin
+                ? `Use your ${isCustomer ? 'customer' : 'shop owner'} account.`
+                : `Create a ${isCustomer ? 'customer' : 'shop owner'} account.`}
             </p>
           </div>
 
@@ -83,10 +94,10 @@ export default function AuthPage({ mode }) {
           {!isLogin && (
             <input
               type="text"
-              placeholder="Full Name"
+              placeholder="Full name"
               className="w-full rounded border p-3"
-              value={form.name}
-              onChange={(event) => updateField('name', event.target.value)}
+              value={form.fullName}
+              onChange={(event) => updateField('fullName', event.target.value)}
               required
             />
           )}
@@ -103,8 +114,8 @@ export default function AuthPage({ mode }) {
               type="tel"
               placeholder="Phone"
               className="w-full rounded border p-3"
-              value={form.phone}
-              onChange={(event) => updateField('phone', event.target.value)}
+              value={form.phoneNumber}
+              onChange={(event) => updateField('phoneNumber', event.target.value)}
               required
             />
           )}
@@ -122,8 +133,15 @@ export default function AuthPage({ mode }) {
             disabled={loading}
             className="w-full rounded bg-gold py-3 font-bold text-ink transition hover:bg-gold-light disabled:opacity-50"
           >
-            {loading ? 'Please wait...' : isLogin ? 'Login Karo' : 'Account Banao'}
+            {loading ? 'Please wait...' : isLogin ? 'Login' : 'Create account'}
           </button>
+
+          <p className="text-center text-sm text-muted">
+            {isLogin ? 'Need an account?' : 'Already have an account?'}{' '}
+            <Link className="font-semibold text-gold" to={isLogin ? registerPath : loginPath}>
+              {isLogin ? 'Create one' : 'Login'}
+            </Link>
+          </p>
         </form>
       </main>
     </div>

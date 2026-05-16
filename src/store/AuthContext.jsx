@@ -1,22 +1,31 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import {
-  getCurrentUser,
   login as loginApi,
-  register as registerApi,
+  registerCustomer,
+  registerShopOwner,
 } from '../services/authService';
+import { clearAuthSession, getStoredUser, saveAuthSession } from '../utils/authStorage';
 
 const AuthContext = createContext();
-const TOKEN_KEY = 'access_token';
-const USER_KEY = 'auth_user';
 
-const saveSession = (data, fallbackUser = {}) => {
+const normalizeUser = (data, fallbackUser = {}) => ({
+  id: data.userId ?? data.id ?? data.user?.id ?? fallbackUser.id,
+  userId: data.userId ?? data.id ?? data.user?.id ?? fallbackUser.id,
+  role: data.role ?? data.user?.role ?? fallbackUser.role,
+  fullName: data.fullName ?? data.name ?? data.user?.fullName ?? data.user?.name ?? fallbackUser.fullName,
+  name: data.fullName ?? data.name ?? data.user?.fullName ?? data.user?.name ?? fallbackUser.name,
+  email: data.email ?? data.user?.email ?? fallbackUser.email,
+  phoneNumber: data.phoneNumber ?? data.phone ?? data.user?.phoneNumber ?? data.user?.phone ?? fallbackUser.phoneNumber,
+  phone: data.phoneNumber ?? data.phone ?? data.user?.phoneNumber ?? data.user?.phone ?? fallbackUser.phone,
+});
+
+const buildSession = (data, fallbackUser = {}) => {
   if (!data?.token) {
     throw new Error('Invalid response from server');
   }
 
-  const user = data.user || fallbackUser;
-  localStorage.setItem(TOKEN_KEY, data.token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  const user = normalizeUser(data, fallbackUser);
+  saveAuthSession({ token: data.token, user });
   return user;
 };
 
@@ -27,7 +36,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       const { data } = await loginApi(credentials);
-      setUser(saveSession(data, { email: credentials.email }));
+      setUser(buildSession(data, { email: credentials.email }));
       return { success: true };
     } catch (error) {
       console.error('Login error:', error);
@@ -35,10 +44,15 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (userData) => {
+  const register = async (userData, role = 'ShopOwner') => {
     try {
+      const registerApi = role === 'Customer' ? registerCustomer : registerShopOwner;
       const { data } = await registerApi(userData);
-      setUser(saveSession(data, { email: userData.email, name: userData.name }));
+      setUser(buildSession(data, {
+        email: userData.email,
+        fullName: userData.fullName || userData.name,
+        role,
+      }));
       return { success: true };
     } catch (error) {
       console.error('Register error:', error);
@@ -47,42 +61,17 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    clearAuthSession();
     setUser(null);
   };
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    const storedUser = localStorage.getItem(USER_KEY);
+    setUser(getStoredUser());
+    setLoading(false);
 
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (_) {
-        localStorage.removeItem(USER_KEY);
-      }
-    }
-
-    getCurrentUser()
-      .then(({ data }) => {
-        const nextUser = data?.user || data;
-        if (nextUser) {
-          setUser(nextUser);
-          localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-        }
-      })
-      .catch(() => {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-        setUser(null);
-      })
-      .finally(() => setLoading(false));
+    const handleUnauthorized = () => setUser(null);
+    window.addEventListener('cutbook:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('cutbook:unauthorized', handleUnauthorized);
   }, []);
 
   return (

@@ -6,8 +6,10 @@ Production-ready React frontend for salon discovery and barber-shop queue manage
 
 ```txt
 /                  Landing page
-/customer/         Customer nearby salon search within 10 km
-/customer/:shopId  Customer queue preview and join token flow
+/customer/         Customer nearby salon search
+/customer/:shopId  Customer service request and token status flow
+/customer/login    Customer login
+/customer/register Customer registration
 /login             Shop-owner login
 /register          Shop-owner registration
 /dashboard         Shop-owner live queue dashboard
@@ -41,7 +43,7 @@ npm run build
 
 ## Backend Contract
 
-The frontend currently uses **15 API operations**. See:
+The frontend uses the API operations documented in:
 
 ```txt
 docs/API_ENDPOINTS.md
