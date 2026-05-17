@@ -15,6 +15,8 @@ export const normalizeNearbyShop = (shop) => {
     shopName: shop.shopName ?? shop.name ?? 'Unnamed shop',
     address: shop.address ?? shop.fullAddress ?? '',
     salonType: shop.salonType ?? 'Unisex',
+    latitude: shop.latitude ?? shop.lat ?? null,
+    longitude: shop.longitude ?? shop.lng ?? null,
     isOpen: Boolean(shop.isLive ?? shop.isOpen ?? shop.openNow),
     isLive: Boolean(shop.isLive ?? shop.isOpen ?? shop.openNow),
     distanceKm: Number(shop.distanceKm ?? shop.distance ?? 0),
