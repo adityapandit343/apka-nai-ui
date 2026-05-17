@@ -82,8 +82,8 @@ const createCustomMarker = (htmlGlowColor, centerEmoji) => L.divIcon({
   iconAnchor: [20, 20]
 });
 
-const userLiveIcon = createCustomMarker('#D4AF37', '💎'); // Gold Crown for Customer Node
-const salonVenueIcon = createCustomMarker('#ffffff', '💈'); // Sharp White for Barber Salon Shop
+const userLiveIcon = createCustomMarker('#D4AF37', '🧑'); // Gold Crown for Customer Node -> Changed to Person
+const salonVenueIcon = createCustomMarker('#ffffff', '✂️'); // Sharp White for Barber Salon Shop -> Changed to Scissors
 
 const POLL_MS = 8000;
 
